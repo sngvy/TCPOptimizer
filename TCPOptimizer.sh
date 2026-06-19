@@ -36,7 +36,7 @@ echo "SUBSYSTEM==\"net\", ACTION==\"add\", KERNEL==\"*\", ATTR{txqueuelen}=\"100
 echo -e "${B_GREEN}[✓] Правило udev для txqueuelen успешно записано.${NC}\n"
 
 # 3. Скачивание нового sysctl.conf
-URL="https://gist.githubusercontent.com/sngvy/66e8f0a21972e6a78ba1ba20c13b8a82/raw/ee6763bf90b2cd9379986035f5d87f0b91309f5c/sysctl.conf"
+URL="https://gist.githubusercontent.com/sngvy/66e8f0a21972e6a78ba1ba20c13b8a82/raw/sysctl.conf"
 CONF_FILE="/etc/sysctl.conf"
 
 echo -e "${B_CYAN}[*] Скачивание нового sysctl.conf...${NC}"
