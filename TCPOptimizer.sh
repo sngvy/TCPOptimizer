@@ -86,6 +86,11 @@ NETDEV_BUDGET_USECS=$(( NCPU * 2000 ))
 [ "$NETDEV_BUDGET_USECS" -lt 2000 ] && NETDEV_BUDGET_USECS=2000
 [ "$NETDEV_BUDGET_USECS" -gt 8000 ] && NETDEV_BUDGET_USECS=8000
 
+# rps_sock_flow_entries — глобальная таблица RFS (Receive Flow Steering)
+RPS_SOCK_FLOW_ENTRIES=$(( NCPU * 8192 ))
+[ "$RPS_SOCK_FLOW_ENTRIES" -lt 8192 ]  && RPS_SOCK_FLOW_ENTRIES=8192
+[ "$RPS_SOCK_FLOW_ENTRIES" -gt 65536 ] && RPS_SOCK_FLOW_ENTRIES=65536
+
 case "$TIER" in
     low)    SOMAXCONN=1024  ;;
     medium) SOMAXCONN=4096  ;;
@@ -174,6 +179,7 @@ printf "    %-38s %s\n" "tcp_wmem:"                    "${TCP_WMEM}"
 printf "    %-38s %s\n" "tcp_mem (страницы):"           "${TCP_MEM_MIN} ${TCP_MEM_PRESSURE} ${TCP_MEM_MAX}"
 printf "    %-38s %s\n" "netdev_max_backlog:"           "${NETDEV_BACKLOG}"
 printf "    %-38s %s\n" "netdev_budget / usecs:"        "${NETDEV_BUDGET} / ${NETDEV_BUDGET_USECS}"
+printf "    %-38s %s\n" "rps_sock_flow_entries:"        "${RPS_SOCK_FLOW_ENTRIES}"
 printf "    %-38s %s\n" "somaxconn:"                    "${SOMAXCONN}"
 printf "    %-38s %s\n" "tcp_max_syn_backlog:"          "${SYN_BACKLOG}"
 printf "    %-38s %s\n" "fs.file-max:"                  "${FILE_MAX}"
@@ -215,6 +221,7 @@ add_comment "Очереди и backlog"
 add "net.core.netdev_max_backlog = ${NETDEV_BACKLOG}"
 add "net.core.netdev_budget = ${NETDEV_BUDGET}"
 add "net.core.netdev_budget_usecs = ${NETDEV_BUDGET_USECS}"
+add "net.core.rps_sock_flow_entries = ${RPS_SOCK_FLOW_ENTRIES}"
 add "net.core.somaxconn = ${SOMAXCONN}"
 add "net.ipv4.tcp_max_syn_backlog = ${SYN_BACKLOG}"
 add "net.ipv4.tcp_max_orphans = ${TCP_MAX_ORPHANS}"
