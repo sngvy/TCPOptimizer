@@ -126,8 +126,6 @@ FILE_MAX=$(( RAM_KB / 10 ))
 [ "$FILE_MAX" -lt 100000 ]  && FILE_MAX=100000
 [ "$FILE_MAX" -gt 2000000 ] && FILE_MAX=2000000
 
-# fs.nr_open — потолок дескрипторов на один процесс
-FS_NR_OPEN=$FILE_MAX
 
 # conntrack: до 5% RAM, ~350 байт на запись, buckets = max / 4
 CONNTRACK_PERCENT=5
@@ -183,7 +181,6 @@ printf "    %-38s %s\n" "rps_sock_flow_entries:"        "${RPS_SOCK_FLOW_ENTRIES
 printf "    %-38s %s\n" "somaxconn:"                    "${SOMAXCONN}"
 printf "    %-38s %s\n" "tcp_max_syn_backlog:"          "${SYN_BACKLOG}"
 printf "    %-38s %s\n" "fs.file-max:"                  "${FILE_MAX}"
-printf "    %-38s %s\n" "fs.nr_open:"                   "${FS_NR_OPEN}"
 printf "    %-38s %s\n" "nf_conntrack_max / buckets:"   "${NF_CONNTRACK_MAX} / ${NF_CONNTRACK_BUCKETS}"
 printf "    %-38s %s\n" "vm.swappiness:"                "${SWAPPINESS}"
 printf "    %-38s %s\n" "dirty_background_ratio/dirty:" "${DIRTY_BG} / ${DIRTY}"
@@ -311,7 +308,6 @@ add_blank
 
 add_comment "Файловые дескрипторы и inotify"
 add "fs.file-max = ${FILE_MAX}"
-add "fs.nr_open = ${FS_NR_OPEN}"
 add "fs.inotify.max_user_watches = ${INOTIFY_WATCHES}"
 add "fs.inotify.max_user_instances = ${INOTIFY_INSTANCES}"
 add_blank
