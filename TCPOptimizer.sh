@@ -78,6 +78,14 @@ NETDEV_BACKLOG=$(( NCPU * 5000 ))
 [ "$NETDEV_BACKLOG" -lt 5000 ]  && NETDEV_BACKLOG=5000
 [ "$NETDEV_BACKLOG" -gt 65536 ] && NETDEV_BACKLOG=65536
 
+# netdev_budget/netdev_budget_usecs — сколько пакетов softirq успевает разобрать за один проход
+NETDEV_BUDGET=$(( NCPU * 300 ))
+[ "$NETDEV_BUDGET" -lt 300 ]  && NETDEV_BUDGET=300
+[ "$NETDEV_BUDGET" -gt 1200 ] && NETDEV_BUDGET=1200
+NETDEV_BUDGET_USECS=$(( NCPU * 2000 ))
+[ "$NETDEV_BUDGET_USECS" -lt 2000 ] && NETDEV_BUDGET_USECS=2000
+[ "$NETDEV_BUDGET_USECS" -gt 8000 ] && NETDEV_BUDGET_USECS=8000
+
 case "$TIER" in
     low)    SOMAXCONN=1024  ;;
     medium) SOMAXCONN=4096  ;;
@@ -112,6 +120,9 @@ MIN_FREE_KBYTES=$(( RAM_KB * 1 / 100 ))
 FILE_MAX=$(( RAM_KB / 10 ))
 [ "$FILE_MAX" -lt 100000 ]  && FILE_MAX=100000
 [ "$FILE_MAX" -gt 2000000 ] && FILE_MAX=2000000
+
+# fs.nr_open — потолок дескрипторов на один процесс
+FS_NR_OPEN=$FILE_MAX
 
 # conntrack: до 5% RAM, ~350 байт на запись, buckets = max / 4
 CONNTRACK_PERCENT=5
@@ -149,6 +160,11 @@ case "$TIER" in
     xhigh)  TXQUEUELEN=20000 ;;
 esac
 
+# kernel.pid_max — потолок числа PID одновременно в системе
+PID_MAX=$(( NCPU * 32768 ))
+[ "$PID_MAX" -lt 32768 ]   && PID_MAX=32768
+[ "$PID_MAX" -gt 4194304 ] && PID_MAX=4194304
+
 # --- Сводка ---
 
 echo -e "${B_GREEN}[✓] Вычисленные параметры:${NC}"
@@ -157,14 +173,17 @@ printf "    %-38s %s\n" "tcp_rmem:"                    "${TCP_RMEM}"
 printf "    %-38s %s\n" "tcp_wmem:"                    "${TCP_WMEM}"
 printf "    %-38s %s\n" "tcp_mem (страницы):"           "${TCP_MEM_MIN} ${TCP_MEM_PRESSURE} ${TCP_MEM_MAX}"
 printf "    %-38s %s\n" "netdev_max_backlog:"           "${NETDEV_BACKLOG}"
+printf "    %-38s %s\n" "netdev_budget / usecs:"        "${NETDEV_BUDGET} / ${NETDEV_BUDGET_USECS}"
 printf "    %-38s %s\n" "somaxconn:"                    "${SOMAXCONN}"
 printf "    %-38s %s\n" "tcp_max_syn_backlog:"          "${SYN_BACKLOG}"
 printf "    %-38s %s\n" "fs.file-max:"                  "${FILE_MAX}"
+printf "    %-38s %s\n" "fs.nr_open:"                   "${FS_NR_OPEN}"
 printf "    %-38s %s\n" "nf_conntrack_max / buckets:"   "${NF_CONNTRACK_MAX} / ${NF_CONNTRACK_BUCKETS}"
 printf "    %-38s %s\n" "vm.swappiness:"                "${SWAPPINESS}"
 printf "    %-38s %s\n" "dirty_background_ratio/dirty:" "${DIRTY_BG} / ${DIRTY}"
 printf "    %-38s %s\n" "inotify watches/instances:"    "${INOTIFY_WATCHES} / ${INOTIFY_INSTANCES}"
 printf "    %-38s %s\n" "txqueuelen:"                    "${TXQUEUELEN}"
+printf "    %-38s %s\n" "kernel.pid_max:"                "${PID_MAX}"
 echo ""
 
 # --- Формирование sysctl.conf ---
@@ -194,6 +213,8 @@ add_blank
 
 add_comment "Очереди и backlog"
 add "net.core.netdev_max_backlog = ${NETDEV_BACKLOG}"
+add "net.core.netdev_budget = ${NETDEV_BUDGET}"
+add "net.core.netdev_budget_usecs = ${NETDEV_BUDGET_USECS}"
 add "net.core.somaxconn = ${SOMAXCONN}"
 add "net.ipv4.tcp_max_syn_backlog = ${SYN_BACKLOG}"
 add "net.ipv4.tcp_max_orphans = ${TCP_MAX_ORPHANS}"
@@ -223,6 +244,8 @@ add "net.ipv4.tcp_fastopen = 3"
 add "net.ipv4.tcp_keepalive_time = 300"
 add "net.ipv4.tcp_keepalive_probes = 7"
 add "net.ipv4.tcp_keepalive_intvl = 30"
+add "net.ipv4.tcp_no_metrics_save = 1"
+add "net.ipv4.tcp_autocorking = 0"
 add_blank
 
 # ECN может мешать некоторым мобильным сетям/middlebox'ам — при проблемах у части клиентов пробовать tcp_ecn=0
@@ -240,6 +263,15 @@ add "net.ipv4.conf.default.accept_source_route = 0"
 add "net.ipv4.conf.all.rp_filter = 2"
 add "net.ipv4.conf.default.rp_filter = 2"
 add "net.ipv4.ip_forward = 1"
+add_blank
+
+add_comment "IPv6: форвардинг и аналоги security-твиков из IPv4"
+add "net.ipv6.conf.all.forwarding = 1"
+add "net.ipv6.conf.default.forwarding = 1"
+add "net.ipv6.conf.all.accept_redirects = 0"
+add "net.ipv6.conf.default.accept_redirects = 0"
+add "net.ipv6.conf.all.accept_source_route = 0"
+add "net.ipv6.conf.default.accept_source_route = 0"
 add_blank
 
 add_comment "ARP / neighbor table"
@@ -262,6 +294,7 @@ add "net.netfilter.nf_conntrack_tcp_timeout_fin_wait = 15"
 add "net.netfilter.nf_conntrack_tcp_timeout_syn_sent = 30"
 add "net.netfilter.nf_conntrack_tcp_timeout_syn_recv = 30"
 add "net.netfilter.nf_conntrack_tcp_loose = 1"
+add "net.netfilter.nf_conntrack_tcp_be_liberal = 1"
 add "net.netfilter.nf_conntrack_udp_timeout = 30"
 add "net.netfilter.nf_conntrack_udp_timeout_stream = 120"
 add "net.netfilter.nf_conntrack_icmp_timeout = 30"
@@ -271,6 +304,7 @@ add_blank
 
 add_comment "Файловые дескрипторы и inotify"
 add "fs.file-max = ${FILE_MAX}"
+add "fs.nr_open = ${FS_NR_OPEN}"
 add "fs.inotify.max_user_watches = ${INOTIFY_WATCHES}"
 add "fs.inotify.max_user_instances = ${INOTIFY_INSTANCES}"
 add_blank
@@ -287,6 +321,7 @@ add_blank
 
 # panic=10, а не 1 — чтобы сообщение о панике успело попасть в лог перед ребутом
 add "kernel.panic = 10"
+add "kernel.pid_max = ${PID_MAX}"
 add_blank
 
 add "net.ipv4.icmp_ratelimit = 100"
@@ -369,6 +404,55 @@ if ip link set dev "$IFACE" txqueuelen "$TXQUEUELEN" 2>/dev/null; then
     echo -e "${B_GREEN}[✓] txqueuelen применён и сохранён в udev-правиле.${NC}"
 else
     echo -e "${B_RED}[✗] Не удалось изменить txqueuelen для ${IFACE}.${NC}"
+fi
+
+# --- Transparent Huge Pages ---
+# Не sysctl-параметр (управляется через /sys, не /proc/sys), поэтому не идёт
+# в общий список LINES/sysctl.conf. При памяти под давлением (активный своп,
+# минимум free) периодическая компакция/дефрагментация THP сама по себе ест
+# CPU в моменты, когда его и так не хватает — отключаем и defrag, и enabled.
+echo -e "\n${B_YELLOW}[*] Отключение Transparent Huge Pages (defrag/enabled)...${NC}"
+THP_APPLIED=0
+if [ -f /sys/kernel/mm/transparent_hugepage/enabled ]; then
+    echo never > /sys/kernel/mm/transparent_hugepage/enabled 2>/dev/null && THP_APPLIED=1
+fi
+if [ -f /sys/kernel/mm/transparent_hugepage/defrag ]; then
+    echo never > /sys/kernel/mm/transparent_hugepage/defrag 2>/dev/null && THP_APPLIED=1
+fi
+
+if [ "$THP_APPLIED" -eq 1 ]; then
+    echo -e "${B_GREEN}[✓] THP отключён на текущей загрузке.${NC}"
+
+    # /sys сбрасывается при каждой перезагрузке — закрепляем через systemd,
+    # аналогично udev-правилу для txqueuelen выше.
+    cat << 'EOF' > /usr/local/bin/disable-thp.sh
+#!/bin/bash
+[ -f /sys/kernel/mm/transparent_hugepage/enabled ] && echo never > /sys/kernel/mm/transparent_hugepage/enabled
+[ -f /sys/kernel/mm/transparent_hugepage/defrag ]  && echo never > /sys/kernel/mm/transparent_hugepage/defrag
+EOF
+    chmod +x /usr/local/bin/disable-thp.sh
+
+    if [ ! -f /etc/systemd/system/disable-thp.service ]; then
+        cat << 'EOF' > /etc/systemd/system/disable-thp.service
+[Unit]
+Description=Disable Transparent Huge Pages
+After=sysinit.target local-fs.target
+DefaultDependencies=no
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/disable-thp.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=basic.target
+EOF
+        systemctl daemon-reload
+        systemctl enable disable-thp.service >/dev/null 2>&1
+        echo -e "${B_GREEN}[✓] Служба disable-thp.service создана и включена для персистентности после ребута.${NC}"
+    fi
+else
+    echo -e "${B_YELLOW}[!] THP-интерфейс не найден в /sys — пропускаю (возможно, отключён на уровне ядра).${NC}"
 fi
 
 echo -e "\n${B_GREEN}${BOLD}Готово. Все параметры вычислены под RAM=${RAM_MB}MB, vCPU=${NCPU} (профиль: ${TIER}).${NC}"
