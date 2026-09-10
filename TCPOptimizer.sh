@@ -227,7 +227,7 @@ add "net.ipv4.ip_local_port_range = 10240 65535"
 add_blank
 
 add_comment "Congestion control / qdisc"
-add "net.core.default_qdisc = fq"
+add "net.core.default_qdisc = fq_codel"
 add "net.ipv4.tcp_congestion_control = bbr"
 add_blank
 
@@ -408,6 +408,45 @@ if ip link set dev "$IFACE" txqueuelen "$TXQUEUELEN" 2>/dev/null; then
 else
     echo -e "${B_RED}[✗] Не удалось изменить txqueuelen для ${IFACE}.${NC}"
 fi
+
+# --- Горячее включение fq_codel на интерфейсе ---
+# net.core.default_qdisc влияет только на новые qdisc при поднятии интерфейса,
+# уже прикреплённый qdisc (fq/pfifo_fast) он не заменяет — делаем явно через tc.
+echo -e "\n${B_YELLOW}[*] Применение qdisc fq_codel на ${IFACE}...${NC}"
+CURRENT_QDISC=$(tc qdisc show dev "$IFACE" | awk '/qdisc/{print $2; exit}')
+echo -e "    Текущий qdisc: ${CURRENT_QDISC:-неизвестно}"
+
+if tc qdisc replace dev "$IFACE" root fq_codel 2>/tmp/tc_err_$$; then
+    echo -e "${B_GREEN}[✓] fq_codel применён на ${IFACE} прямо сейчас.${NC}"
+else
+    err_msg=$(cat /tmp/tc_err_$$ 2>/dev/null)
+    echo -e "${B_RED}[✗] Не удалось применить fq_codel на ${IFACE}.${NC}"
+    [ -n "$err_msg" ] && echo -e "${B_RED}    причина: ${err_msg}${NC}"
+fi
+rm -f /tmp/tc_err_$$
+
+# Персистентность после перезагрузки — аналогично txqueuelen/THP ниже:
+# /etc/sysctl.conf применится сам при поднятии интерфейса штатным сетевым
+# менеджером, но не все дистрибутивы гарантируют это (netplan/NetworkManager
+# иногда переопределяют qdisc), поэтому закрепляем через systemd-юнит.
+cat << EOF_QDISC > /etc/systemd/system/fq-codel-${IFACE}.service
+[Unit]
+Description=Apply fq_codel qdisc on ${IFACE}
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/sbin/tc qdisc replace dev ${IFACE} root fq_codel
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+EOF_QDISC
+
+systemctl daemon-reload
+systemctl enable --now "fq-codel-${IFACE}.service" >/dev/null 2>&1
+echo -e "${B_GREEN}[✓] Служба fq-codel-${IFACE}.service создана и включена для персистентности после ребута.${NC}"
 
 # --- Transparent Huge Pages ---
 # Не sysctl-параметр (управляется через /sys, не /proc/sys), поэтому не идёт
